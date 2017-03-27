@@ -2,10 +2,10 @@ import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import ParseError
 from html.parser import HTMLParser
 
-input_file = r"E:\Downloads\Anime\stackexchange\stackoverflow.com-Posts\Posts.xml"
-output_file = r"E:\Downloads\Anime\stackexchange\stackoverflow.com-Posts\javascript_no_jquery.xml"
-unusual_file = r"E:\Downloads\Anime\stackexchange\stackoverflow.com-Posts\strange.xml"
-counts_file = r"E:\Downloads\Anime\stackexchange\stackoverflow.com-Posts\counts_top100.json"
+input_file = r""
+output_file = r""
+unusual_file = r""
+counts_file = r""
 
 code_dex = r"E:\Downloads\Anime\stackexchange\stackoverflow.com-Posts\code_index_no_jquery.js"
 
