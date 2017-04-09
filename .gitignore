@@ -145,4 +145,7 @@ typings/
 # Yarn Integrity file
 .yarn-integrity
 
-
+#Intermediary files
+valid.json
+invalid.json
+workable.json
