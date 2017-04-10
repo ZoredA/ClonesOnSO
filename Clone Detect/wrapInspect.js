@@ -10,7 +10,7 @@ const Writable = require('stream').Writable;
 
 //https://nodejs.org/api/stream.html#stream_implementing_a_writable_stream
 class MyWritable extends Writable {
-    constructor(options) {
+    constructor(options, datadump) {
         
         // Calls the stream.Writable() constructor
         super(options);
@@ -27,18 +27,32 @@ class MyWritable extends Writable {
     }
     
     }
-
-    getData() {
-        return this.buffer;
-    }
     
 }
 
-var runjsinspect = function(parameters, callback){
+var runjsinspect = function(parameters, callback, callback_args){
+    var callback_args = callback_args || {};
     
-    options = {
+    //A bit of a hack around not wanting to modify the inspector code (it outputs on console.error)
+    console.error = function(err){
+      console.log(parameters.files[0] + " threw an error.");
+      callback_args.error=true;
+      // if (parameters.minimal){
+        // callback(null, callback_args);
+        // return;
+      // }
+      // else{
+        // callback({'err':err}, callback_args);
+        // return;
+      // }
+      
+    }
+    
+    
+    var options = {
         'threshold':parameters['threshold'] || 50,
-        'identifiers':true,
+        'identifiers':parameters['identifiers'] || true,
+        'literals':parameters['literals'] || true,
         'minInstances':2,
         'reporter': "json",
         'truncate':100
@@ -58,7 +72,7 @@ var runjsinspect = function(parameters, callback){
     var extensions = ['.js', '.jsx'];
     
     try {
-      paths = filepaths.getSync(parameters.files, {
+      var paths = filepaths.getSync(parameters.files, {
         ext: extensions,
         ignore: ignorePatterns
       });
@@ -66,7 +80,6 @@ var runjsinspect = function(parameters, callback){
       console.log(e.message);
       console.log('breaking')
       throw e;
-      process.exit(4);
     }
     
     var inspector = new jsinspect.Inspector(paths, {
@@ -77,27 +90,47 @@ var runjsinspect = function(parameters, callback){
     });
     
     var datadump = []; //We just write everything into a list...
-    var writeable = new MyWritable(datadump);
+    var writeable = new MyWritable({},datadump);
     
     var reporters = jsinspect.reporters;
     var reporterType = reporters[options.reporter] || reporters.default;
-    console.dir(reporterType);
-    new reporterType(inspector, {
+    
+    var rep = new reporterType(inspector, {
       truncate: options.truncate,
-      writableStream:parameters.writableStream
+      writableStream:writeable
     });
     
     // Track the number of matches
     var matches = 0;
     inspector.on('match', () => matches++);
-    inspector.on('end', () => callback( JSON.parse( parameters.datadump.join('')) ) );
+    inspector.on('end', () => { 
+        var ret_data = {};
+        if (parameters.minimal){
+            ret_data = null;
+            callback_args.matches = matches;
+        }
+        else if (matches == 0){
+            ret_data = {'data':[], 'json':''}; 
+        }
+        else{
+            var joined = datadump.join('');
+            ret_data = {'data':JSON.parse(joined), 'json':joined} 
+        }
+        delete writeable.buffer;
+        delete rep._inspector;
+        
+        callback( ret_data , callback_args); 
+        
+        return ;
+    });
     
     try {
       inspector.run();
       //process.exit(matches ? 5 : 0);
     } catch(err) {
       console.log(err);
-      process.exit(1);
+      //callback({'err':err}, callback_args);
+      //process.exit(1);
     }
     
 }
@@ -108,13 +141,16 @@ var run = function(){
 		return ;
 	}
 
-    var datadump = [];
     var z = runjsinspect({
-        'datadump':datadump,
-        'writableStream':new MyWritable(datadump),
         'files':['C:\\Users\\Zored\\Git\\StackClones\\Clone Detect\\wrapInspect.js','C:\\Users\\Zored\\Git\\StackClones\\Clone Detect\\wrapInspect.js']
-    }, (data) => (console.log(data))
-    )
+    }, function(data){
+        if (data.data.length > 0){
+            console.log(data);
+        }
+        else{
+            console.log("no match");
+        }
+    } )
     
 }()
 
