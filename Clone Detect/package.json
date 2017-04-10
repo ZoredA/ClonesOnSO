@@ -13,6 +13,7 @@
   "author": "Zored A",
   "license": "MIT",
   "dependencies": {
+    "async": "^2.3.0",
     "filepaths": "^0.3.0",
     "jsinspect": "^0.12.4",
     "jsonfile": "^2.4.0"
