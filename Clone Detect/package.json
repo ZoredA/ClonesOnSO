@@ -16,6 +16,7 @@
     "async": "^2.3.0",
     "filepaths": "^0.3.0",
     "jsinspect": "^0.12.4",
-    "jsonfile": "^2.4.0"
+    "jsonfile": "^2.4.0",
+    "lodash": "^4.17.4"
   }
 }

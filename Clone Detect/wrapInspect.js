@@ -81,7 +81,7 @@ var runjsinspect = function(parameters, callback, callback_args){
       console.log('breaking')
       throw e;
     }
-    
+
     var inspector = new jsinspect.Inspector(paths, {
       threshold:    options.threshold,
       identifiers:  options.identifiers,
@@ -114,7 +114,28 @@ var runjsinspect = function(parameters, callback, callback_args){
         }
         else{
             var joined = datadump.join('');
-            ret_data = {'data':JSON.parse(joined), 'json':joined} 
+            var json_obj = JSON.parse(joined);
+            if (parameters.intra_file == false){
+                //We only include matches that are not in the same file.
+                var new_obj = [];
+                for(var i = 0; i < json_obj.length; i++){
+                    var entry = json_obj[i];
+                    var instances = entry.instances; //list of objects. Each one has a path, lines and code
+                    var pathSet = new Set();
+                    for (var j = 0; j < instances.length; j++){
+                        pathSet.add( instances[j]['path'] );
+                    }
+                    if (pathSet.length < 2){
+                        //We don't have at least two unique paths. We omit this entry.
+                        continue;
+                    }
+                    new_obj.push(entry);
+                }
+                ret_data = {'data':new_obj, 'json':JSON.stringify(new_obj)};
+            }
+            else{
+                ret_data = {'data':json_obj, 'json':joined};
+            }
         }
         delete writeable.buffer;
         delete rep._inspector;
@@ -145,7 +166,7 @@ var run = function(){
         'files':['C:\\Users\\Zored\\Git\\StackClones\\Clone Detect\\wrapInspect.js','C:\\Users\\Zored\\Git\\StackClones\\Clone Detect\\wrapInspect.js']
     }, function(data){
         if (data.data.length > 0){
-            console.log(data);
+            console.log(data.data[0]['instances']);
         }
         else{
             console.log("no match");
