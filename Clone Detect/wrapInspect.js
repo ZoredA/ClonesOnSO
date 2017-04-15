@@ -57,7 +57,7 @@ var runjsinspect = function(parameters, callback, callback_args){
         'reporter': "json",
         'truncate':100
     }
-    
+        
     if (!parameters.files){
         console.log('No file path given');
         process.exit(0);
@@ -89,6 +89,7 @@ var runjsinspect = function(parameters, callback, callback_args){
       minInstances: options.minInstances
     });
     
+    console.dir(options);
     var datadump = []; //We just write everything into a list...
     var writeable = new MyWritable({},datadump);
     
@@ -125,7 +126,7 @@ var runjsinspect = function(parameters, callback, callback_args){
                     for (var j = 0; j < instances.length; j++){
                         pathSet.add( instances[j]['path'] );
                     }
-                    if (pathSet.length < 2){
+                    if (pathSet.size < 2){
                         //We don't have at least two unique paths. We omit this entry.
                         continue;
                     }
@@ -137,8 +138,8 @@ var runjsinspect = function(parameters, callback, callback_args){
                 ret_data = {'data':json_obj, 'json':joined};
             }
         }
-        delete writeable.buffer;
-        delete rep._inspector;
+        writeable.buffer = undefined;
+        rep._inspector = undefined;
         
         callback( ret_data , callback_args); 
         

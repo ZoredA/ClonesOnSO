@@ -95,7 +95,7 @@ var analyzer = function(){
             }
     }
     
-    var iterateThroughThresholds = function(validListFile, thresholds, output_name){
+    var iterateThroughThresholds = function(validListFile, thresholds, output_name, options){
         var files = require(validListFile);
         var thresholds = thresholds || [50,30,20,15];
         var done_set = new Set();
@@ -147,7 +147,10 @@ var analyzer = function(){
         )
     }
     
-    var files_self_compare = function(validListFile, threshold, big_callback){
+    var files_self_compare = function(validListFile, threshold, big_callback, options){
+        if (!options){
+          var options = {};
+        }
         console.log("Working on threshold: " + threshold.toString() + " with file count: " + validListFile.length.toString());
         var count = 0;
         async.map(validListFile,
@@ -156,10 +159,13 @@ var analyzer = function(){
                     'filename':file,
                     'threshold':threshold
                 }
-                var ins = inspector({'files':[file,file],
-                    'threshold':threshold,
-                    'minimal':true
-                },(arg1,arg2)=>{
+                var defaults = {'files':[file,file],
+                      'threshold':threshold,
+                      'minimal':true
+                }
+                _.extend(defaults, options);
+                
+                var ins = inspector(defaults,(arg1,arg2)=>{
                     count++;
                     if (count % 100 == 0){
                         console.log(count.toString() + " iterated through.")
@@ -183,34 +189,26 @@ var analyzer = function(){
             
     }
     
-    //dexFile is something like thresholds.json it is a list mapping
-    //all thresholds to a list of snippets 
-    var findClonesInDir = function(startDir, dexFile, options ){
-        var extensions = ['.js', '.jsx'];
-        var ignorePatterns = ['node_modules', 'bower_components'];
-        try {
-          var js_files = filepaths.getSync([startDir], {
-            ext: extensions,
-            ignore: ignorePatterns
-          });
-        } catch(e) {
-          console.log(e.message);
-          console.log('breaking')
-          throw e;
-        }
-        //There is a bug in filepaths that stops it from working on windows paths I think. So
-        //we just trim the ./ it adds at the beginning for some reason.
-        js_files = _.map(js_files, (str)=>{return _.trimStart(str, './');});
-        if (!js_files || js_files.length < 1){
-            console.log("No js files found in " + startDir);
-            console.log("Exiting.");
-            return;
-        }
-        
-        console.log(js_files);
-        console.log(startDir);
-        
-        var json_file_data = require(dexFile);
+    var single_file_self_compare = function(file, options, callback){
+        var ins_options = {
+            'files':[file, file]
+        };
+        _.extend(ins_options, options);
+        var z = inspector(ins_options, function(data){
+            if (data.data.length > 0){
+                callback(true);
+            }
+            else{
+                callback(false);
+            }
+        } 
+        )
+    }
+    
+    
+    //json_file_data is something like thresholds.json it is a list mapping
+    //all thresholds to a list of snippets. Note: expects object not the file path
+    var findClonesInDir = function(startDir, js_files, json_file_data, options, big_callback ){
         
         var threshold = options.threshold;
         var snippet_threshold = options.snippet_threshold;
@@ -220,31 +218,48 @@ var analyzer = function(){
             return;
         }
         var threshes = threshold.toString() + '-' + snippet_threshold.toString(); //used in output file name.
-        var callbackFunc = function(fileName, fileStats){
+        var writeFileMatchData = function(fileName, fileStats){
             var baseName = path.basename(fileName);
             var fileExt = path.extname(fileName);
             var output_name = _.replace(baseName, fileExt, '_'+threshes+'_matches.json');
-            var output_file = path.join(startDir, output_name);
+            var output_file = path.join(startDir, 'clones', output_name);
             if (fileStats.length < 1){
                 console.log(fileName + " had no matches.");
             }
             else{
                 console.log(fileName + " had " + fileStats.length.toString() + " matches.");
             }
-            jsonfile.writeFile(output_file, fileStats, {spaces: 2});
+            jsonfile.writeFileSync(output_file, fileStats, {spaces: 2});
+            
         }
         
-        for(var i = 0; i < js_files.length; i++){
-            js_file = js_files[i];
-            files_multi_compare(js_file, snippetList, options, callbackFunc);
-        }
+        async.forEachOf(js_files, function(js_file, key, callback){
+            
+            var baseName = path.basename(js_file);
+            var fileExt = path.extname(js_file);
+            var output_name = _.replace(baseName, fileExt, '_'+threshes+'_matches.json');
+            var output_file = path.join(startDir, 'clones', output_name);
+            if (fs.existsSync(output_file)){
+                console.log( output_file + " exists. Skipping." );
+                return callback();
+            }
+            
+            files_multi_compare(js_file, snippetList, options, (fileName, fileStats) =>{
+                 writeFileMatchData(fileName, fileStats);
+                 callback();
+            });
+        }, function(err){
+            big_callback();
+        });
+        
         
     }
     
     //files_self_compare compares against itself. This compares a single file against a snippet collection!
     var files_multi_compare = function(file, snippetList, options, big_callback){
         threshold = options.threshold;
-        console.log("Working on threshold: " + threshold.toString() + " with file count: " + snippetList.length.toString());
+        console.log("Working on file: " + file);
+        console.log("Working with threshold: " + threshold.toString() + " with snippet count: " + snippetList.length.toString());
         var count = 0;
         async.map(snippetList,
             function(snippet, callback){
@@ -260,6 +275,7 @@ var analyzer = function(){
                 //such as threshold, literals etc
                 _.extend(callback_args, options);
                 _.extend(inspector_options, options);
+                
                 var ins = inspector(inspector_options,
                     (arg1,arg2)=>{
                         count++;
@@ -310,7 +326,8 @@ var analyzer = function(){
         'iterateThroughDir':iterateThroughDir,
         'getFiles' : getFiles,
         'selfCompare':iterateThroughThresholds,
-        'findClonesInDir':findClonesInDir
+        'findClonesInDir':findClonesInDir,
+        'singleFileCompare':single_file_self_compare
     }
 }
 
@@ -341,24 +358,157 @@ var run = function(){
         //This could be the valid files created by createValidInvalid, but in this
         //case it is the set of valid+(invalid but with reference error)
         //Note: You have to generate this separately. Code not included in this repo, but is easy enough.
-        process.nextTick(function(){a.selfCompare('./workable.json', [110,90,70,50,30,20,15], 'thresholds_2.json');});
+        process.nextTick(function(){a.selfCompare('./workable.json', [110,90,70,50,30,20,15], 
+        'thresholds_no_limit.json', {
+          'identifiers':false,
+          'literals':false
+        });});
+    }
+    
+    
+    var getFiles = function(someDir){
+        var extensions = ['.js', '.jsx'];
+        var ignorePatterns = ['node_modules', 'bower_components'];
+        try {
+          var js_files = filepaths.getSync([someDir], {
+            ext: extensions,
+            ignore: ignorePatterns
+          });
+        } catch(e) {
+          console.log(e.message);
+          console.log('breaking')
+          throw e;
+        }
+        //There is a bug in filepaths that stops it from working on windows paths I think. So
+        //we just trim the ./ it adds at the beginning for some reason.
+        js_files = _.map(js_files, (str)=>{return _.trimStart(str, './');});
+        if (!js_files || js_files.length < 1){
+            console.log("No js files found in " + someDir);
+            console.log("Exiting.");
+            return;
+        }
+        
+        console.log(js_files);
+        console.log(someDir);
+        return js_files;
     }
     
     //This function actually looks at a given directory, then matches all .js files with the SO snippets
     //but only matches to those of the threshold or less.
     var doDirectoryMatches = function(){
-        var a = analyzer();
-        var curDir = "C:\\Users\\Zored\\Git\\StackClones\\Clone Detect\\";
-        var options = {
-            'threshold':70,
-            'snippet_threshold':70,
-            'identifiers':false,
-            'literals':false,
-            'intra_file':false
+        
+        var dirToWorkOn = process.argv[2];
+        if (!dirToWorkOn){
+            console.log("No directory given.");
+            return;
         }
-        a.findClonesInDir(curDir, './thresholds_110.json', options)
+        var a = analyzer();
+        
+        var dexFile = './thresholds_110.json'
+        snippet_thresholds=[50,30,20];
+        var json_file_data = require(dexFile);
+        
+        //Will contain a set of fils that don't meet the threshold so we can ignore them.
+        var excludeSet = new Set();
+        var js_files = getFiles(dirToWorkOn);
+        
+        async.series([
+            function(outer_callback){
+                
+                //We chose to set our self-compare threshold at 30.
+                var options = {
+                    'threshold':30,
+                    'identifiers':true,
+                    'literals':true
+                }
+                
+                //We check each file against itself. If it does not self-match then we exclude it.
+                async.eachOf(js_files, function(file, index, callback){
+                    console.log("self checking " + file);
+                    a.singleFileCompare(file, options, (result)=>{
+                        if (result != true){
+                            console.log("self checking of " + file + " resulted in no match.");
+                            excludeSet.add(file);
+                        }
+                        callback();
+                    })
+                },function(err){
+                    outer_callback(); //Moves us on to next item in async series.
+                })
+            },
+            //This just writes the list of files out to a json file.
+            function(outer_callback){
+              var output_obj = {
+                'total_count':js_files.length,
+                'excluded_count':excludeSet.size
+              }
+              _.remove(js_files, (data, index, arr) => {return excludeSet.has(data);});
+              output_obj.worked_on = js_files;
+              
+              var output_name = 'files.json';
+              var output_file = path.join(dirToWorkOn, 'clones', output_name);
+
+              jsonfile.writeFileSync(output_file, output_obj, {spaces: 2});
+              outer_callback();
+            },
+            function(outer_callback){
+                async.timesSeries(snippet_thresholds.length, 
+                    function(n, callback){
+                        var options = {
+                            'threshold':20,
+                            'snippet_threshold':snippet_thresholds[n],
+                            'identifiers':false,
+                            'literals':false,
+                            'intra_file':false
+                        }
+                        a.findClonesInDir(dirToWorkOn, js_files, json_file_data, options, callback);
+                    },
+                    function(err, data){
+                        outer_callback();
+                    }
+                )
+            }
+        
+        ], function(err){
+            if(err){
+                throw err;
+            }
+            console.log("Finished async series");
+            console.timeEnd('Directory to snippet compare');
+        });
+
+        
+        //
+        
+        // var options = {
+            // 'threshold':90,
+            // 'snippet_threshold':90,
+            // 'identifiers':false,
+            // 'literals':false,
+            // 'intra_file':false
+        // }
+        // a.findClonesInDir(curDir, './thresholds_110.json', options);
+        
+        // var options = {
+            // 'threshold':70,
+            // 'snippet_threshold':70,
+            // 'identifiers':false,
+            // 'literals':false,
+            // 'intra_file':false
+        // }
+        // a.findClonesInDir(curDir, './thresholds_110.json', options);
+        
+        // var options = {
+            // 'threshold':70,
+            // 'snippet_threshold':30,
+            // 'identifiers':false,
+            // 'literals':false,
+            // 'intra_file':false
+        // }
+        // a.findClonesInDir(curDir, './thresholds_110.json', options);
+        
     }
-
-    doDirectoryMatches();
-
+    //console.time('Directory to snippet compare');
+    //doDirectoryMatches();
+    createSelfCompare();
 }()
