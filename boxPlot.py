@@ -87,7 +87,7 @@ def locWithID(order, file_input, ommit, rename={}):
         
 #Expects a json file
 #with an obj in the form {'key':[]}
-file_input = r"C:\Users\Zored\Git\StackClones\Clone Detect\thresholds_110.json"
+file_input = r"Clone Detect\thresholds_110.json"
 
 ommit = ['error', 'below_15']
 rename = {'below_15': 'Below 15'}
